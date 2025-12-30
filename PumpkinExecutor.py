@@ -2,52 +2,58 @@
 # 负责 6x6 巨型南瓜的种植和收获
 
 import Config
-import TaskCenter
 import ZoneManager
-from Base import move_to, do_water
 
-# 南瓜执行器主循环
-def run(task_id):
-	# 1. 申请区域
-	zone = ZoneManager.request_zone(task_id, "pumpkin")
-	if zone == None:
-		print("Pumpkin task " + str(task_id) + " failed: no zone")
-		TaskCenter.complete_task(task_id)
+# 当前任务 ID（模块级变量，避免传递）
+_task_id = 0
+
+# 浇水
+def _do_water():
+	if num_items(Items.Water) <= Config.MIN_WATER:
 		return
+	if get_water() >= Config.WATER_THRESHOLD:
+		return
+	while get_water() < Config.WATER_TARGET:
+		if num_items(Items.Water) <= Config.MIN_WATER:
+			break
+		use_item(Items.Water)
 
-	while True:
-		# 2. 等待资源
-		while num_items(Items.Carrot) < Config.MIN_CARROT_FOR_PUMPKIN:
-			pass
+# 南瓜执行器：单次执行
+# zone 由 TaskCenter 预分配并通过闭包传入（解决无共享内存问题）
+def run(task_id, zone):
+	global _task_id
+	_task_id = task_id
 
-		# 3. 种植 6x6
-		_plant_grid(zone)
+	# 等待资源
+	while num_items(Items.Carrot) < Config.MIN_CARROT_FOR_PUMPKIN:
+		pass
 
-		# 4. 等待成熟并修复
-		while not _check_all_ready(zone):
-			_scan_and_fix(zone)
+	# 种植
+	_plant_grid(zone)
 
-		# 5. 收获
-		move_to(zone["x"], zone["y"])
-		harvest()
+	# 等待成熟
+	while not _check_all_ready(zone):
+		_scan_and_fix(zone)
 
-# 种植南瓜网格
+	# 收获
+	ZoneManager.move_to(_task_id, zone["x"], zone["y"])
+	harvest()
+	# 注意：区域释放和任务完成由主无人机处理（因为无共享内存）
+
 def _plant_grid(zone):
 	sx = zone["x"]
 	sy = zone["y"]
 	size = zone["width"]
 
-	move_to(sx, sy)
+	ZoneManager.move_to(_task_id, sx, sy)
 
 	for dy in range(size):
 		if dy % 2 == 0:
-			# 向东
 			for dx in range(size):
 				_plant_at()
 				if dx < size - 1:
 					move(East)
 		else:
-			# 向西
 			for dx in range(size - 1, -1, -1):
 				_plant_at()
 				if dx > 0:
@@ -55,7 +61,6 @@ def _plant_grid(zone):
 		if dy < size - 1:
 			move(North)
 
-# 在当前位置种植南瓜
 def _plant_at():
 	entity = get_entity_type()
 	if entity != Entities.Pumpkin:
@@ -65,9 +70,8 @@ def _plant_at():
 			till()
 		if num_items(Items.Carrot) >= 1:
 			plant(Entities.Pumpkin)
-	do_water()
+	_do_water()
 
-# 检查是否全部成熟
 def _check_all_ready(zone):
 	sx = zone["x"]
 	sy = zone["y"]
@@ -75,7 +79,7 @@ def _check_all_ready(zone):
 
 	for dy in range(size):
 		for dx in range(size):
-			move_to(sx + dx, sy + dy)
+			ZoneManager.move_to(_task_id, sx + dx, sy + dy)
 			entity = get_entity_type()
 			if entity != Entities.Pumpkin:
 				return False
@@ -83,7 +87,6 @@ def _check_all_ready(zone):
 				return False
 	return True
 
-# 扫描并修复
 def _scan_and_fix(zone):
 	sx = zone["x"]
 	sy = zone["y"]
@@ -93,14 +96,13 @@ def _scan_and_fix(zone):
 		y = sy + dy
 		if dy % 2 == 0:
 			for dx in range(size):
-				move_to(sx + dx, y)
+				ZoneManager.move_to(_task_id, sx + dx, y)
 				_fix_tile()
 		else:
 			for dx in range(size - 1, -1, -1):
-				move_to(sx + dx, y)
+				ZoneManager.move_to(_task_id, sx + dx, y)
 				_fix_tile()
 
-# 修复单个格子
 def _fix_tile():
 	entity = get_entity_type()
 
@@ -109,7 +111,7 @@ def _fix_tile():
 			return
 		if num_items(Items.Carrot) >= 1:
 			plant(Entities.Pumpkin)
-		do_water()
+		_do_water()
 	else:
 		if can_harvest():
 			harvest()
@@ -117,4 +119,4 @@ def _fix_tile():
 			till()
 		if num_items(Items.Carrot) >= 1:
 			plant(Entities.Pumpkin)
-		do_water()
+		_do_water()

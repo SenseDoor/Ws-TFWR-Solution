@@ -2,13 +2,17 @@
 # 负责管理和分发执行器
 
 import PumpkinExecutor
-import PatrolExecutor
+import TreeExecutor
+import CarrotExecutor
+import GrassExecutor
 import DefaultExecutor
 
 # 执行器注册表
 EXECUTORS = {
 	"pumpkin": PumpkinExecutor.run,
-	"patrol": PatrolExecutor.run,
+	"tree": TreeExecutor.run,
+	"carrot": CarrotExecutor.run,
+	"grass": GrassExecutor.run,
 }
 
 # 根据任务类型返回执行器函数
