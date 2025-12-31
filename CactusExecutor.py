@@ -72,7 +72,8 @@ def _sort_row(sx, y, width):
 		for i in range(width - 1):
 			current = measure()
 			right = measure(East)
-			if current > right:
+			# measure 可能返回 None，需要检查
+			if current != None and right != None and current > right:
 				swap(East)
 				sorted_flag = False
 			move(East)
@@ -87,7 +88,8 @@ def _sort_column(x, sy, height):
 		for i in range(height - 1):
 			current = measure()
 			up = measure(North)
-			if current > up:
+			# measure 可能返回 None，需要检查
+			if current != None and up != None and current > up:
 				swap(North)
 				sorted_flag = False
 			move(North)

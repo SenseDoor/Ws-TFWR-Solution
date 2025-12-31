@@ -5,7 +5,7 @@ WORLD_SIZE = get_world_size()
 
 # === 产出目标权重 ===
 TARGET_WEIGHTS = {
-	Items.Pumpkin: 0,
+	Items.Pumpkin: 1,
 	Items.Cactus: 2,
 	Items.Carrot: 0,
 }
@@ -22,3 +22,7 @@ MIN_WATER = 5
 # === 浇水参数 ===
 WATER_THRESHOLD = 0.25
 WATER_TARGET = 0.75
+
+# === 区域分配 ===
+# 是否紧凑分配同类区域（False 表示同类区域间保留 1 格间距）
+COMPACT_ZONE = False

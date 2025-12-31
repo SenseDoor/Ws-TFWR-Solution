@@ -4,11 +4,11 @@
 
 import Config
 
-# 区域存储: {task_id: {"x": int, "y": int, "width": int, "height": int}}
+# 区域存储: {task_id: {"x": int, "y": int, "width": int, "height": int, "type": str}}
 zones = {}
 
-# 已占用格子集合: {(x, y), ...}
-occupied = set()
+# 已占用格子: {(x, y): zone_type, ...}
+occupied = {}
 
 # 巡逻小块默认大小
 PATROL_BLOCK_SIZE = 4
@@ -60,18 +60,26 @@ def _do_move(from_x, from_y, to_x, to_y):
 
 def request_zone(task_id, zone_type):
 	if zone_type == "pumpkin":
-		return _request_fixed_zone(task_id, 6, 6)
+		return _request_fixed_zone(task_id, 6, 6, zone_type)
 	elif zone_type == "patrol":
-		return _request_patrol_zone(task_id)
+		return _request_patrol_zone(task_id, zone_type)
 	print("Unknown zone type: " + zone_type)
 	return None
 
 # 申请固定大小区域（南瓜等）
-def _request_fixed_zone(task_id, width, height):
-	for start_y in range(Config.WORLD_SIZE - height + 1):
-		for start_x in range(Config.WORLD_SIZE - width + 1):
-			if _is_area_free(start_x, start_y, width, height):
-				zone = {"x": start_x, "y": start_y, "width": width, "height": height}
+def _request_fixed_zone(task_id, width, height, zone_type):
+	# 非紧凑模式：检查时用扩展大小（同类型间隔 1 格）
+	if Config.COMPACT_ZONE:
+		check_w = width
+		check_h = height
+	else:
+		check_w = width + 1
+		check_h = height + 1
+
+	for start_y in range(Config.WORLD_SIZE - check_h + 1):
+		for start_x in range(Config.WORLD_SIZE - check_w + 1):
+			if _is_area_free(start_x, start_y, check_w, check_h, zone_type):
+				zone = {"x": start_x, "y": start_y, "width": width, "height": height, "type": zone_type}
 				_occupy_area(task_id, zone)
 				return zone
 
@@ -79,43 +87,76 @@ def _request_fixed_zone(task_id, width, height):
 	return None
 
 # 申请巡逻区域（智能分配：优先小块，紧张时单格）
-def _request_patrol_zone(task_id):
+def _request_patrol_zone(task_id, zone_type):
+	# 非紧凑模式：检查时用扩展大小
+	if Config.COMPACT_ZONE:
+		padding = 0
+	else:
+		padding = 1
+
 	# 优先尝试分配小块
-	block = _find_free_block(PATROL_BLOCK_SIZE, PATROL_BLOCK_SIZE)
+	block = _find_free_block(PATROL_BLOCK_SIZE + padding, PATROL_BLOCK_SIZE + padding, zone_type)
 	if block != None:
-		zone = {"x": block[0], "y": block[1], "width": PATROL_BLOCK_SIZE, "height": PATROL_BLOCK_SIZE}
+		zone = {"x": block[0], "y": block[1], "width": PATROL_BLOCK_SIZE, "height": PATROL_BLOCK_SIZE, "type": zone_type}
 		_occupy_area(task_id, zone)
 		return zone
 
 	# 降级：尝试更小的块
 	for size in [2, 1]:
-		block = _find_free_block(size, size)
+		block = _find_free_block(size + padding, size + padding, zone_type)
 		if block != None:
-			zone = {"x": block[0], "y": block[1], "width": size, "height": size}
+			zone = {"x": block[0], "y": block[1], "width": size, "height": size, "type": zone_type}
 			_occupy_area(task_id, zone)
 			return zone
 
 	return None
 
-def _find_free_block(width, height):
-	for start_y in range(Config.WORLD_SIZE - height + 1):
-		for start_x in range(Config.WORLD_SIZE - width + 1):
-			if _is_area_free(start_x, start_y, width, height):
+def _find_free_block(check_w, check_h, zone_type):
+	for start_y in range(Config.WORLD_SIZE - check_h + 1):
+		for start_x in range(Config.WORLD_SIZE - check_w + 1):
+			if _is_area_free(start_x, start_y, check_w, check_h, zone_type):
 				return (start_x, start_y)
 	return None
 
-def _is_area_free(start_x, start_y, width, height):
+# 检查区域是否空闲
+# 核心区域（width x height）不能与任何已占用格子重叠
+# 非紧凑模式下，扩展区域（+1 边距）只检查同类型冲突
+def _is_area_free(start_x, start_y, width, height, zone_type):
+	# 计算实际区域大小（去掉边距）
+	if Config.COMPACT_ZONE:
+		core_w = width
+		core_h = height
+	else:
+		core_w = width - 1
+		core_h = height - 1
+
 	for dy in range(height):
 		for dx in range(width):
-			if (start_x + dx, start_y + dy) in occupied:
-				return False
+			pos = (start_x + dx, start_y + dy)
+			if pos in occupied:
+				# 核心区域内：任何占用都冲突
+				if dx < core_w and dy < core_h:
+					return False
+				# 边距区域：只有同类型才冲突
+				elif occupied[pos] == zone_type:
+					return False
 	return True
 
 def _occupy_area(task_id, zone):
 	zones[task_id] = zone
-	for dy in range(zone["height"]):
-		for dx in range(zone["width"]):
-			occupied.add((zone["x"] + dx, zone["y"] + dy))
+	zone_type = zone["type"]
+
+	# 非紧凑模式：占用扩展区域（多 1 格边距）
+	if Config.COMPACT_ZONE:
+		occupy_w = zone["width"]
+		occupy_h = zone["height"]
+	else:
+		occupy_w = zone["width"] + 1
+		occupy_h = zone["height"] + 1
+
+	for dy in range(occupy_h):
+		for dx in range(occupy_w):
+			occupied[(zone["x"] + dx, zone["y"] + dy)] = zone_type
 
 # ============ 区域释放 ============
 
@@ -125,11 +166,19 @@ def release_zone(task_id):
 
 	zone = zones[task_id]
 
-	for dy in range(zone["height"]):
-		for dx in range(zone["width"]):
+	# 非紧凑模式：释放扩展区域
+	if Config.COMPACT_ZONE:
+		occupy_w = zone["width"]
+		occupy_h = zone["height"]
+	else:
+		occupy_w = zone["width"] + 1
+		occupy_h = zone["height"] + 1
+
+	for dy in range(occupy_h):
+		for dx in range(occupy_w):
 			pos = (zone["x"] + dx, zone["y"] + dy)
 			if pos in occupied:
-				occupied.remove(pos)
+				occupied.pop(pos)
 
 	zones.pop(task_id)
 
