@@ -21,6 +21,14 @@ def _action_cone():
 # zone 参数为兼容接口，默认执行器不使用区域
 def run(task_id, zone):
 	# 随机选一个彩蛋动作执行
-	actions = [_action_flip, _action_pet, _action_wizard_hat, _action_pumpkin_hat, _action_cone]
-	action_index = int(random() * len(actions))
-	actions[action_index]()
+	r = random()
+	if r < 0.2:
+		_action_flip()
+	elif r < 0.4:
+		_action_pet()
+	elif r < 0.6:
+		_action_wizard_hat()
+	elif r < 0.8:
+		_action_pumpkin_hat()
+	else:
+		_action_cone()

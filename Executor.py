@@ -5,6 +5,7 @@ import PumpkinExecutor
 import TreeExecutor
 import CarrotExecutor
 import GrassExecutor
+import CactusExecutor
 import DefaultExecutor
 
 # 执行器注册表
@@ -13,6 +14,7 @@ EXECUTORS = {
 	"tree": TreeExecutor.run,
 	"carrot": CarrotExecutor.run,
 	"grass": GrassExecutor.run,
+	"cactus": CactusExecutor.run,
 }
 
 # 根据任务类型返回执行器函数

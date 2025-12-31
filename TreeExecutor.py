@@ -1,5 +1,6 @@
 # === 树执行器 ===
 # 收获 + 种树
+# 优化：棋盘格种植，避免相邻树减速（相邻树使生长时间翻倍）
 
 import ZoneManager
 
@@ -17,11 +18,14 @@ def _process_zone(zone):
 	for y in range(zone["y"], zone["y"] + zone["height"]):
 		for x in range(zone["x"], zone["x"] + zone["width"]):
 			ZoneManager.move_to(_task_id, x, y)
-			_process_tile()
+			_process_tile(x, y)
 
-def _process_tile():
+# 棋盘格种植：只在 (x+y) % 2 == 0 的位置种树
+def _process_tile(x, y):
 	if can_harvest():
 		harvest()
 
 	if get_entity_type() == None:
-		plant(Entities.Tree)
+		# 棋盘格模式：避免相邻树
+		if (x + y) % 2 == 0:
+			plant(Entities.Tree)

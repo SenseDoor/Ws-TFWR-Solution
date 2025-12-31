@@ -1,5 +1,6 @@
 # === 胡萝卜执行器 ===
 # 收获 + 种胡萝卜（需要先耕地）
+# 优化：检查资源后再种植（消耗干草和木材）
 
 import ZoneManager
 
@@ -26,4 +27,6 @@ def _process_tile():
 	if get_entity_type() == None:
 		if get_ground_type() == Grounds.Grassland:
 			till()
-		plant(Entities.Carrot)
+		# 检查资源（胡萝卜消耗干草和木材）
+		if num_items(Items.Hay) >= 1 and num_items(Items.Wood) >= 1:
+			plant(Entities.Carrot)

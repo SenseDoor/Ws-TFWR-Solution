@@ -10,13 +10,7 @@ def main():
 	# 初始化任务中心
 	TaskCenter.init()
 
-	# 创建所有配置的任务
-	TaskCenter.create_all_tasks()
-
-	# 分发所有任务到执行器
-	TaskCenter.dispatch_all()
-
-	# 主无人机监控循环
+	# 主无人机监控循环（动态生成任务）
 	while True:
 		TaskCenter.monitor()
 

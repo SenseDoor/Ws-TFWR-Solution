@@ -15,6 +15,7 @@ Wiki: https://thefarmerwasreplaced.wiki.gg/
 | `lambda x: x+1` | 定义普通函数 |
 | `from folder import x` | 只支持 `import module` |
 | `global a, b` | 分开写 `global a` 和 `global b` |
+| `int(x)` | 不支持类型转换，用整数运算代替 |
 
 ---
 

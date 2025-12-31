@@ -1,5 +1,6 @@
 # === 任务中心 ===
 # 负责任务生命周期管理，是系统的任务调度核心
+# 动态按需生成任务，按权重随机选择任务类型
 
 import Config
 import ZoneManager
@@ -30,10 +31,75 @@ def init():
 	tasks = {}
 	next_task_id = 1
 
-# 根据 Config 配置创建所有任务
-def create_all_tasks():
-	for task_type in Config.ENABLED_TASKS:
-		_create_task(task_type)
+# ============ 资源链映射 ============
+
+# Item → Entity 映射
+ITEM_TO_ENTITY = {
+	Items.Pumpkin: Entities.Pumpkin,
+	Items.Carrot: Entities.Carrot,
+	Items.Wood: Entities.Tree,
+	Items.Hay: Entities.Grass,
+	Items.Cactus: Entities.Cactus,
+}
+
+# Entity → task_type 映射
+ENTITY_TO_TASK = {
+	Entities.Pumpkin: "pumpkin",
+	Entities.Carrot: "carrot",
+	Entities.Tree: "tree",
+	Entities.Grass: "grass",
+	Entities.Cactus: "cactus",
+}
+
+# ============ 任务类型选择 ============
+
+# 按权重随机选择目标 Item
+def _select_target_item():
+	items = []
+	weights = []
+	for item in Config.TARGET_WEIGHTS:
+		items.append(item)
+		weights.append(Config.TARGET_WEIGHTS[item])
+
+	total = 0
+	for w in weights:
+		total = total + w
+
+	r = random() * total
+	cumulative = 0
+	for i in range(len(items)):
+		cumulative = cumulative + weights[i]
+		if r < cumulative:
+			return items[i]
+	return items[len(items) - 1]
+
+# 递归查找缺口资源对应的任务
+def _find_needed_task(target_item):
+	entity = ITEM_TO_ENTITY[target_item]
+	cost = get_cost(entity)
+
+	# 检查是否缺少依赖资源
+	if cost != None:
+		for item in cost:
+			if num_items(item) < cost[item]:
+				# 缺少此资源，递归查找
+				return _find_needed_task(item)
+
+	# 依赖满足，执行此任务
+	return ENTITY_TO_TASK[entity]
+
+# 根据目标权重选择目标，再反推资源链
+def _select_task_type():
+	target = _select_target_item()
+	return _find_needed_task(target)
+
+# 根据任务类型获取区域类型
+def _get_zone_type(task_type):
+	if task_type == "pumpkin":
+		return "pumpkin"
+	return "patrol"
+
+# ============ 任务生命周期 ============
 
 # 内部：创建单个任务
 def _create_task(task_type):
@@ -43,34 +109,22 @@ def _create_task(task_type):
 	tasks[task_id] = {"type": task_type, "status": TASK_PENDING}
 	return task_id
 
-# 为所有待处理任务启动执行器
-def dispatch_all():
-	for task_id in tasks:
-		if tasks[task_id]["status"] == TASK_PENDING:
-			_dispatch_task(task_id)
+# 尝试创建并分发单个任务，返回是否成功
+def _try_dispatch_one(task_type):
+	task_id = _create_task(task_type)
 
-# 根据任务类型获取区域类型
-def _get_zone_type(task_type):
-	if task_type == "pumpkin":
-		return "pumpkin"
-	return "patrol"
-
-# 内部：启动执行器（生成无人机）
-def _dispatch_task(task_id):
-	task_type = tasks[task_id]["type"]
-
-	# 主无人机先分配区域（解决无共享内存问题）
+	# 主无人机先分配区域
 	zone_type = _get_zone_type(task_type)
 	zone = ZoneManager.request_zone(task_id, zone_type)
 	if zone == None:
-		# 无可用区域，任务失败
+		# 无可用区域
 		tasks[task_id]["status"] = TASK_COMPLETED
-		return
+		return False
 
 	tasks[task_id]["status"] = TASK_RUNNING
 	tasks[task_id]["zone"] = zone
 
-	# 获取对应的执行器函数
+	# 获取执行器函数
 	executor = _get_executor()
 	executor_func = executor.get_executor(task_type)
 
@@ -78,15 +132,38 @@ def _dispatch_task(task_id):
 	def run_task():
 		executor_func(task_id, zone)
 
+	# 尝试 spawn 无人机
 	drone = spawn_drone(run_task)
-	tasks[task_id]["drone"] = drone
-
-# 完成任务
-def complete_task(task_id):
-	if task_id in tasks:
+	if drone == None:
+		# spawn 失败，释放区域
+		ZoneManager.release_zone(task_id)
 		tasks[task_id]["status"] = TASK_COMPLETED
-	else:
-		print("Task not found: " + str(task_id))
+		return False
+
+	tasks[task_id]["drone"] = drone
+	return True
+
+# 清理已完成的任务
+def _cleanup_finished():
+	running = list_tasks_by_status(TASK_RUNNING)
+	for task_id in running:
+		task = tasks[task_id]
+		drone = None
+		if "drone" in task:
+			drone = task["drone"]
+		# drone 为 None 或已完成
+		if drone == None or has_finished(drone):
+			if "zone" in task:
+				ZoneManager.release_zone(task_id)
+			task["status"] = TASK_COMPLETED
+
+# 主无人机执行彩蛋（回退逻辑）
+def _do_fallback():
+	executor = _get_executor()
+	fallback_func = executor.get_executor("fallback")
+	fallback_func(0, None)
+
+# ============ 公共接口 ============
 
 # 获取任务信息
 def get_task(task_id):
@@ -108,30 +185,19 @@ def list_tasks_by_status(status):
 			result.append(task_id)
 	return result
 
-# 监控循环：检测任务完成，重新创建并分发
+# ============ 监控循环 ============
+
+# 监控循环：动态生成任务
 def monitor():
-	# 检查运行中的任务，看无人机是否完成
-	running = list_tasks_by_status(TASK_RUNNING)
-	for task_id in running:
-		task = tasks[task_id]
-		# 检查无人机是否存在且已完成
-		drone = None
-		if "drone" in task:
-			drone = task["drone"]
-		# drone 为 None 表示 spawn 失败，视为完成
-		if drone == None or has_finished(drone):
-			# 无人机完成，释放区域并标记任务完成
-			if "zone" in task:
-				ZoneManager.release_zone(task_id)
-			task["status"] = TASK_COMPLETED
+	# 1. 清理已完成任务
+	_cleanup_finished()
 
-	# 检查是否还有未完成的任务
-	running = list_tasks_by_status(TASK_RUNNING)
-	pending = list_tasks_by_status(TASK_PENDING)
+	# 2. 按权重随机选择任务类型
+	task_type = _select_task_type()
 
-	if len(running) > 0 or len(pending) > 0:
-		return  # 还有任务在执行
+	# 3. 尝试创建并分发任务
+	success = _try_dispatch_one(task_type)
 
-	# 所有任务完成，重新创建并分发
-	create_all_tasks()
-	dispatch_all()
+	# 4. 失败则主无人机执行彩蛋
+	if not success:
+		_do_fallback()

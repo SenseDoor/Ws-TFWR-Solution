@@ -3,8 +3,12 @@
 
 WORLD_SIZE = get_world_size()
 
-# === 启用的任务列表 ===
-ENABLED_TASKS = ["pumpkin", "tree", "carrot", "grass"]
+# === 产出目标权重 ===
+TARGET_WEIGHTS = {
+	Items.Pumpkin: 0,
+	Items.Cactus: 2,
+	Items.Carrot: 0,
+}
 
 # === 区域规格 ===
 ZONE_SPECS = {
